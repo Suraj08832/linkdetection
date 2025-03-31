@@ -42,57 +42,101 @@ AUTOREPLIES = {
 }
 
 def extract_links(text: str) -> list:
-    """Extract URLs from text using regex."""
-    url_pattern = r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+'
-    return re.findall(url_pattern, text)
+    """Extract URLs and @ mentions from text using regex."""
+    # URL patterns
+    url_patterns = [
+        r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+',  # Regular URLs
+        r'www\.[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*\.[a-zA-Z]{2,}',  # URLs without http/https
+        r't\.me/[a-zA-Z0-9_]+',  # Telegram links
+        r'telegram\.me/[a-zA-Z0-9_]+',  # Alternative Telegram links
+        r'instagram\.com/[a-zA-Z0-9_]+',  # Instagram links
+        r'@[a-zA-Z0-9_]+',  # @ mentions
+        r'https?://(?:www\.)?(?:t\.me|telegram\.me)/[a-zA-Z0-9_]+',  # Telegram links with protocol
+        r'https?://(?:www\.)?instagram\.com/[a-zA-Z0-9_]+',  # Instagram links with protocol
+    ]
+    
+    found_links = []
+    for pattern in url_patterns:
+        found_links.extend(re.findall(pattern, text, re.IGNORECASE))
+    
+    return found_links
 
 async def check_bio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Check user's bio for links when they join the group."""
-    logger.info(f"New member joined: {update.chat_member.new_chat_member.user.username}")
-    if not update.chat_member or not update.chat_member.new_chat_member:
-        return
+    try:
+        if not update.chat_member or not update.chat_member.new_chat_member:
+            return
 
-    user = update.chat_member.new_chat_member.user
-    if user.is_bot:
-        return
+        user = update.chat_member.new_chat_member.user
+        logger.info(f"New member joined: {user.username} (ID: {user.id})")
+        
+        if user.is_bot:
+            return
 
-    # Skip if user is admin
-    if user.id in admin_ids:
-        return
+        # Update admin list first
+        try:
+            chat = await context.bot.get_chat(update.effective_chat.id)
+            admin_ids.clear()
+            for admin in chat.get_administrators():
+                admin_ids.add(admin.user.id)
+            logger.info(f"Admin list updated: {admin_ids}")
+        except Exception as e:
+            logger.error(f"Error updating admin list: {e}")
 
-    # Check if user has a bio with links
-    if user.bio:
-        links = extract_links(user.bio)
-        if links and user.id not in approved_users:
-            user_warnings[user.id] = user_warnings.get(user.id, 0) + 1
-            warning_count = user_warnings[user.id]
+        # Skip if user is admin
+        if user.id in admin_ids:
+            logger.info(f"Skipping bio check for admin user: {user.username}")
+            return
+
+        # Get user's full info including bio
+        try:
+            user_info = await context.bot.get_chat(user.id)
+            logger.info(f"User bio: {user_info.bio}")
             
-            warning_message = (
-                f"⚠️ Warning {warning_count}/{MAX_WARNINGS}\n"
-                f"@{user.username} has links in their bio. "
-                "Please remove the links or reply to this message to request approval."
-            )
-            
-            sent_message = await context.bot.send_message(
+            if user_info.bio:
+                links = extract_links(user_info.bio)
+                logger.info(f"Found links in bio: {links}")
+                
+                if links and user.id not in approved_users:
+                    user_warnings[user.id] = user_warnings.get(user.id, 0) + 1
+                    warning_count = user_warnings[user.id]
+                    
+                    # Create a more detailed warning message
+                    warning_message = (
+                        f"⚠️ Warning {warning_count}/{MAX_WARNINGS}\n"
+                        f"@{user.username} has links in their bio:\n"
+                        f"Found: {', '.join(links)}\n"
+                        "Please remove all links or reply to this message to request approval."
+                    )
+                    
+                    sent_message = await context.bot.send_message(
+                        chat_id=update.effective_chat.id,
+                        text=warning_message
+                    )
+
+                    # Store the warning message ID for later reference
+                    context.user_data[f"warning_message_{user.id}"] = sent_message.message_id
+
+                    # Mute user if they reach max warnings
+                    if warning_count >= MAX_WARNINGS:
+                        await context.bot.restrict_chat_member(
+                            chat_id=update.effective_chat.id,
+                            user_id=user.id,
+                            until_date=datetime.now() + MUTE_DURATION,
+                            permissions=ChatPermissions(can_send_messages=False)
+                        )
+                        await context.bot.send_message(
+                            chat_id=update.effective_chat.id,
+                            text=f"🚫 @{user.username} has been muted for 24 hours due to multiple warnings."
+                        )
+        except Exception as e:
+            logger.error(f"Error getting user info: {e}")
+            await context.bot.send_message(
                 chat_id=update.effective_chat.id,
-                text=warning_message
+                text=f"⚠️ Unable to check bio for @{user.username}. Please ensure the bot has permission to view user information."
             )
-
-            # Store the warning message ID for later reference
-            context.user_data[f"warning_message_{user.id}"] = sent_message.message_id
-
-            # Mute user if they reach max warnings
-            if warning_count >= MAX_WARNINGS:
-                await context.bot.restrict_chat_member(
-                    chat_id=update.effective_chat.id,
-                    user_id=user.id,
-                    until_date=datetime.now() + MUTE_DURATION,
-                    permissions=ChatPermissions(can_send_messages=False)
-                )
-                await context.bot.send_message(
-                    chat_id=update.effective_chat.id,
-                    text=f"🚫 @{user.username} has been muted for 24 hours due to multiple warnings."
-                )
+    except Exception as e:
+        logger.error(f"Error in check_bio: {e}")
 
 async def approve_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle the /approve command."""
@@ -175,14 +219,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await update.message.reply_text(reply)
             return
 
-async def update_admin_list(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Update the list of admin users."""
-    chat = await context.bot.get_chat(update.effective_chat.id)
-    admin_ids.clear()
-    for admin in chat.get_administrators():
-        admin_ids.add(admin.user.id)
-    logger.info(f"Admin list updated: {admin_ids}")
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Send a message when the command /start is issued."""
     logger.info(f"Start command received from user {update.effective_user.id}")
@@ -234,6 +270,7 @@ def main() -> None:
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("info", info_command))
     application.add_handler(ChatMemberHandler(check_bio, ChatMemberStatus.MEMBER))
+    application.add_handler(ChatMemberHandler(check_bio, ChatMemberStatus.LEFT))
     application.add_handler(CommandHandler("approve", approve_user))
     application.add_handler(CommandHandler("reset_warnings", reset_warnings))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
