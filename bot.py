@@ -239,6 +239,22 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await update.message.reply_text(reply)
             return
 
+async def handle_channel_post(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle channel posts."""
+    try:
+        if not update.channel_post:
+            return
+
+        # Log the channel post
+        logger.info(f"Channel post received in {update.effective_chat.title} (ID: {update.effective_chat.id})")
+        
+        # Check for copyright if enabled
+        if context.bot_data.get('copyright_enabled', {}).get(update.effective_chat.id, True):
+            await handle_copyright(update, context)
+            
+    except Exception as e:
+        logger.error(f"Error handling channel post: {e}")
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Send a message when the command /start is issued."""
     logger.info(f"Start command received from user {update.effective_user.id}")
