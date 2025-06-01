@@ -49,6 +49,18 @@ AUTOREPLIES = {
     "help": "Please follow the group rules. If you need assistance, ask the admin.",
 }
 
+def get_bot_token() -> str:
+    """Get the bot token from environment variables with proper error handling."""
+    token = os.getenv('TELEGRAM_BOT_TOKEN')
+    if not token:
+        token = os.getenv('BOT_TOKEN')  # Try alternative environment variable name
+    
+    if not token:
+        logger.error("No bot token found! Please set TELEGRAM_BOT_TOKEN or BOT_TOKEN environment variable.")
+        raise ValueError("Bot token not found in environment variables!")
+    
+    return token
+
 def extract_links(text: str) -> list:
     """Extract URLs and @ mentions from text using regex."""
     # URL patterns
@@ -311,28 +323,38 @@ async def info_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 def main() -> None:
     """Start the bot."""
-    # Create the Application and pass it your bot's token
-    application = Application.builder().token(os.getenv('TELEGRAM_BOT_TOKEN')).build()
+    try:
+        # Get bot token
+        token = get_bot_token()
+        logger.info("Bot token loaded successfully")
+        
+        # Create the Application
+        application = Application.builder().token(token).build()
+        logger.info("Application built successfully")
 
-    # Add handlers
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(CommandHandler("info", info_command))
-    application.add_handler(CommandHandler("approve", approve_user))
-    application.add_handler(CommandHandler("reset_warnings", reset_warnings))
-    application.add_handler(CommandHandler("delete", delete_message))
-    application.add_handler(CommandHandler("approve_sticker", approve_sticker))
-    application.add_handler(CommandHandler("copyright", toggle_copyright))
-    
-    # Add message handlers
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_copyright))
-    application.add_handler(MessageHandler(filters.STICKER, handle_sticker))
-    application.add_handler(MessageHandler(filters.UPDATE_EDITED_MESSAGE, handle_edited_message))
-    application.add_handler(ChatMemberHandler(check_bio, ChatMemberStatus.MEMBER))
+        # Add handlers
+        application.add_handler(CommandHandler("start", start))
+        application.add_handler(CommandHandler("help", help_command))
+        application.add_handler(CommandHandler("info", info_command))
+        application.add_handler(CommandHandler("approve", approve_user))
+        application.add_handler(CommandHandler("reset_warnings", reset_warnings))
+        application.add_handler(CommandHandler("delete", delete_message))
+        application.add_handler(CommandHandler("approve_sticker", approve_sticker))
+        application.add_handler(CommandHandler("copyright", toggle_copyright))
+        
+        # Add message handlers
+        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_copyright))
+        application.add_handler(MessageHandler(filters.STICKER, handle_sticker))
+        application.add_handler(MessageHandler(filters.UPDATE_EDITED_MESSAGE, handle_edited_message))
+        application.add_handler(ChatMemberHandler(check_bio, ChatMemberStatus.MEMBER))
 
-    # Start the Bot
-    application.run_polling()
+        logger.info("Starting bot...")
+        # Start the Bot
+        application.run_polling()
+    except Exception as e:
+        logger.error(f"Error starting bot: {e}")
+        raise
 
 if __name__ == '__main__':
     main() 
