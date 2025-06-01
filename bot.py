@@ -343,10 +343,11 @@ def main() -> None:
         application.add_handler(CommandHandler("copyright", toggle_copyright))
         
         # Add message handlers
-        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_copyright))
-        application.add_handler(MessageHandler(filters.STICKER, handle_sticker))
-        application.add_handler(MessageHandler(filters.UPDATE_EDITED_MESSAGE, handle_edited_message))
+        application.add_handler(MessageHandler(filters.UpdateType.EDITED_MESSAGE, handle_edited_message))
+        application.add_handler(MessageHandler(filters.UpdateType.EDITED_CHANNEL_POST, handle_edited_message))
+        application.add_handler(MessageHandler(filters.UpdateType.CHANNEL_POST, handle_channel_post))
+        application.add_handler(MessageHandler(filters.UpdateType.MESSAGE, handle_message))
+        application.add_handler(MessageHandler(filters.Sticker.ALL, handle_sticker))
         application.add_handler(ChatMemberHandler(check_bio, ChatMemberStatus.MEMBER))
 
         logger.info("Starting bot...")
