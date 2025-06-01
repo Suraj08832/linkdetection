@@ -14,6 +14,14 @@ from telegram.ext import (
     ChatMemberHandler,
 )
 from telegram.constants import ChatMemberStatus
+from message_handlers import (
+    delete_message, 
+    handle_sticker, 
+    approve_sticker, 
+    handle_edited_message,
+    handle_copyright,
+    toggle_copyright
+)
 
 # Set up logging
 logging.basicConfig(
@@ -233,12 +241,18 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "/help - Show this help message\n"
         "/info - Show bot information\n"
         "/approve &lt;user_id&gt; - Approve a user's bio link (Admin only)\n"
-        "/reset_warnings &lt;user_id&gt; - Reset user warnings (Admin only)\n\n"
+        "/reset_warnings &lt;user_id&gt; - Reset user warnings (Admin only)\n"
+        "/delete &lt;reason&gt; - Delete a message (Admin only, reply to message)\n"
+        "/approve_sticker &lt;user_id&gt; - Approve a user to send stickers (Group owner only)\n"
+        "/copyright - Toggle copyright protection (Admin only)\n\n"
         "<b>Features:</b>\n"
         "• Monitors user bios for links\n"
         "• Warns users with links in bio\n"
         "• Auto-mutes after 3 warnings\n"
         "• Admin approval system\n"
+        "• Message deletion with reasons\n"
+        "• Sticker approval system\n"
+        "• Copyright protection (85% similarity threshold)\n"
         "• Automatic responses to common queries"
     )
     await update.message.reply_text(help_text, parse_mode='HTML')
@@ -247,6 +261,49 @@ async def info_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     """Send a message when the command /info is issued."""
     info_text = (
         "🤖 <b>Bot Information</b>\n\n"
+        "<b>Core Features:</b>\n"
+        "• <b>Bio Link Protection:</b>\n"
+        "  - Monitors user bios for links\n"
+        "  - Warns users with unapproved links\n"
+        "  - Auto-mutes after 3 warnings\n"
+        "  - Admin approval system for links\n\n"
+        
+        "• <b>Message Control:</b>\n"
+        "  - Deletes edited messages\n"
+        "  - Message deletion with reasons\n"
+        "  - Admin-only message deletion\n\n"
+        
+        "• <b>Sticker Management:</b>\n"
+        "  - Group owner approval required\n"
+        "  - Admins need approval too\n"
+        "  - Auto-deletes unapproved stickers\n\n"
+        
+        "• <b>Copyright Protection:</b>\n"
+        "  - 85% similarity detection\n"
+        "  - Auto-deletes copied content\n"
+        "  - Shows similarity percentage\n"
+        "  - Can be toggled by admins\n\n"
+        
+        "<b>Special Features:</b>\n"
+        "• Bot owner (ID: 7798461429) has full privileges\n"
+        "• Automatic responses to common queries\n"
+        "• Per-chat settings for copyright protection\n"
+        "• Smart warning system with detailed messages\n\n"
+        
+        "<b>Admin Commands:</b>\n"
+        "• /approve - Approve bio links\n"
+        "• /reset_warnings - Reset user warnings\n"
+        "• /delete - Delete messages with reason\n"
+        "• /copyright - Toggle copyright protection\n\n"
+        
+        "<b>Group Owner Commands:</b>\n"
+        "• /approve_sticker - Approve users for stickers\n\n"
+        
+        "<b>User Commands:</b>\n"
+        "• /start - Start the bot\n"
+        "• /help - Show help message\n"
+        "• /info - Show this information\n\n"
+        
         "Bot designed by 𐏓  𝅥‌꯭𝆬ᷟ𝐣‌‌‌➥‌𝗭𝗲‌𝗳𝗿𝗼‌𝗻 ‌🔥❰⎯꯭ ꭗ‌‌  🍂\n"
         "𝐔‌‌𝐬‌‌𝐞‌‌𝐫‌‌𝐧‌‌𝐚‌‌𝐦‌‌𝐞‌‌: @crush_hu_tera"
     )
@@ -254,30 +311,28 @@ async def info_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 def main() -> None:
     """Start the bot."""
-    # Get the bot token
-    token = os.getenv("BOT_TOKEN")
-    if not token:
-        logger.error("No bot token found in .env file!")
-        return
-    
-    logger.info("Starting bot...")
-    
-    # Create the Application
-    application = Application.builder().token(token).build()
+    # Create the Application and pass it your bot's token
+    application = Application.builder().token(os.getenv('TELEGRAM_BOT_TOKEN')).build()
 
     # Add handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("info", info_command))
-    application.add_handler(ChatMemberHandler(check_bio, ChatMemberStatus.MEMBER))
-    application.add_handler(ChatMemberHandler(check_bio, ChatMemberStatus.LEFT))
     application.add_handler(CommandHandler("approve", approve_user))
     application.add_handler(CommandHandler("reset_warnings", reset_warnings))
+    application.add_handler(CommandHandler("delete", delete_message))
+    application.add_handler(CommandHandler("approve_sticker", approve_sticker))
+    application.add_handler(CommandHandler("copyright", toggle_copyright))
+    
+    # Add message handlers
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_copyright))
+    application.add_handler(MessageHandler(filters.STICKER, handle_sticker))
+    application.add_handler(MessageHandler(filters.UPDATE_EDITED_MESSAGE, handle_edited_message))
+    application.add_handler(ChatMemberHandler(check_bio, ChatMemberStatus.MEMBER))
 
-    # Start the bot
-    logger.info("Bot is ready to handle messages")
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    # Start the Bot
+    application.run_polling()
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main() 
